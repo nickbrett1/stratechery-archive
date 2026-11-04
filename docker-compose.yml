@@ -16,5 +16,5 @@ services:
 
     volumes:
       - /srv/appdata/msgvault:/db:ro
-      - /srv/docker/stratechery/data:/archive
+      - /srv/datasets/stratechery-archive:/archive
     environment: {}

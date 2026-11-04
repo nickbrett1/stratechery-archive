@@ -12,7 +12,7 @@ One command that copies the Stratechery message population out of `msgvault.db` 
 directory of **verbatim `.eml` files**, plus a hash index. Nothing else.
 
 ```
-/archive/                       # rw mount, host: /srv/docker/stratechery/data
+/archive/                       # rw mount, host: /srv/datasets/stratechery-archive
   raw/<message_id>.eml          # verbatim RFC 5322, decompressed. IMMUTABLE once written
   raw/SHA256SUMS                # manifest of raw/*.eml only, sorted by path, written LAST
   index.jsonl                   # append-only, one line per message, sorted by message_id
@@ -90,7 +90,7 @@ Generated compose (verified):
 user: "1000:1000"
 volumes:
   - /srv/appdata/msgvault:/db:ro
-  - /srv/docker/stratechery/data:/archive
+  - /srv/datasets/stratechery-archive:/archive
 restart: "no"
 ```
 

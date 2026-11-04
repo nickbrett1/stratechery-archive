@@ -48,7 +48,7 @@ thing that makes a scheduled run reproducible.
 ```bash
 docker run --rm \
   -v /srv/appdata/msgvault:/db:ro \
-  -v /srv/docker/stratechery/data:/archive \
+  -v /srv/datasets/stratechery-archive:/archive \
   ghcr.io/nickbrett1/stratechery-archive:<commit-sha>
 ```
 
