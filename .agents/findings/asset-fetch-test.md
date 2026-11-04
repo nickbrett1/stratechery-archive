@@ -80,3 +80,37 @@ that `url_path` is recorded before the `?` is what keeps it out of the index.
 **`email_address`**. `population.py` resolves the column by probing
 `email_address` → `email` → `address` and names the schema in the error if none
 matches; a regression test covers the real name.
+
+## Live capture result (2026-11-04, ryzen)
+
+First full asset pass, image `f15a73acaebca3626d4d67580a8d246c4701eb28`,
+archive at `/srv/datasets/stratechery-archive`:
+
+| | |
+|---|---|
+| image references in the index | 5,688 |
+| fetched | 5,686 |
+| failed | **2** |
+| asset files on disk | **2,415** (598 MB, 621,120,443 B) |
+| refs → files | 5,686 refs dedupe to 2,415 files |
+
+The ref/file ratio is content addressing working as intended, not lost work:
+2,415 distinct sha256 values across 5,686 references means 3,271 references
+pointed at bytes already captured. Nothing was fetched twice.
+
+The two failures are HTTP 404 at the source — the images are gone upstream, not
+blocked and not token-related:
+
+- msg 77349 → `/2020/03/Stratechery-Information-1-1024x630.jpg`
+- msg 95082 → `/2017/05/Jean-Léon_Gérôme_-_The_Tulip_Folly_-_Walters_372612-1024x667.jpg`
+
+They stay in `images[]` without an `asset` key, which is the designed record of
+"known URL, bytes no longer exist upstream". Re-running will not fix them and
+should not: retrying a permanent 404 forever is noise, and deleting the entry
+would erase the fact that the message referenced it.
+
+Post-run checks: 0 orphan files (no asset without a reference), 0 references
+with an `asset` key pointing at a missing file, 5/5 sampled entries matched
+file size and sha256, and `raw/SHA256SUMS` was byte-identical to its value
+before the asset pass (`587135a9…`) — asset capture does not touch `raw/`.
+`index.jsonl` did change, as it must: that is where the `asset` keys live.
