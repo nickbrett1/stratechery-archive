@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "A stratechery-archive project generated with genproj"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # The only non-stdlib dependency: an HTTP client for the vendored msgvault
+    # REST client (BRIEF §5). Everything else is stdlib.
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
 dev = [
