@@ -234,6 +234,17 @@ def test_other_domains_are_not_in_the_population(tmp_path, archive):
     assert list((archive / "raw").glob("*.eml")) == []
 
 
+def test_population_uses_the_real_email_column_name(tmp_path, archive):
+    # msgvault 3.24.0 spells it `email_address`; nothing else. Guessing `email`
+    # and `address` (both wrong) is what a first live run would have hit.
+    db_path = tmp_path / "msgvault.db"
+    conn = build_vault(db_path, [1], email_column="email_address")
+    conn.close()
+
+    assert mirror.run(db_path, archive) == 0
+    assert read_index(archive)[0]["from"] == "email@stratechery.com"
+
+
 def test_population_sql_is_a_single_statement(vault):
     import sqlite3
 

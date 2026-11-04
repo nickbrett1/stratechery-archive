@@ -96,18 +96,30 @@ def assert_schema(conn: sqlite3.Connection) -> None:
             "participants has no 'domain' column; the population predicate cannot "
             f"resolve from_domain (columns: {', '.join(participant_columns)})"
         )
-    for candidate in ("email", "address"):
-        if candidate in participant_columns:
-            return
-    raise SchemaError(
-        "participants has no email-like column ('email' or 'address'); the index "
-        f"'from' field cannot be filled (columns: {', '.join(participant_columns)})"
-    )
+    if _email_column_or_none(participant_columns) is None:
+        raise SchemaError(
+            "participants has no email-like column ('email_address', 'email' or "
+            f"'address'); the index 'from' field cannot be filled (columns: "
+            f"{', '.join(participant_columns)})"
+        )
+
+
+# Probe order matters only if a future schema carries several; on msgvault
+# 3.24.0 the column is `email_address` (verified on ryzen 2026-11-04).
+EMAIL_COLUMN_CANDIDATES = ("email_address", "email", "address")
+
+
+def _email_column_or_none(columns: list[str]) -> str | None:
+    for candidate in EMAIL_COLUMN_CANDIDATES:
+        if candidate in columns:
+            return candidate
+    return None
 
 
 def _email_column(conn: sqlite3.Connection) -> str:
-    columns = _columns(conn, "participants")
-    return "email" if "email" in columns else "address"
+    column = _email_column_or_none(_columns(conn, "participants"))
+    assert column is not None  # assert_schema ran first
+    return column
 
 
 def population_sql(conn: sqlite3.Connection) -> str:

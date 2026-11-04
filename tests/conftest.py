@@ -98,18 +98,19 @@ def build_vault(
     *,
     domain: str = "stratechery.com",
     domain_via_sender_id: bool = False,
+    email_column: str = "email",
 ) -> sqlite3.Connection:
     """Create a msgvault-shaped SQLite file and return an open connection."""
     message_ids = message_ids if message_ids is not None else [3, 1, 2]
     conn = sqlite3.connect(path)
-    conn.executescript(SCHEMA)
+    conn.executescript(SCHEMA.replace("    email TEXT,", f"    {email_column} TEXT,"))
 
     conn.execute(
-        "INSERT INTO participants (id, email, name, domain) VALUES (1, ?, ?, ?)",
+        f"INSERT INTO participants (id, {email_column}, name, domain) VALUES (1, ?, ?, ?)",
         ("email@stratechery.com", "Stratechery", domain),
     )
     conn.execute(
-        "INSERT INTO participants (id, email, name, domain) VALUES (2, ?, ?, ?)",
+        f"INSERT INTO participants (id, {email_column}, name, domain) VALUES (2, ?, ?, ?)",
         ("nick@example.com", "Nick", "example.com"),
     )
 
