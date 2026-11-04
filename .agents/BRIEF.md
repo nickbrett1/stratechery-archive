@@ -112,6 +112,12 @@ each run file.
 
 Expected: **1,690 messages, 248,421,760 B decompressed, 2016-12-21 → 2026-11-03.**
 
+That is a snapshot, not a constant — the corpus grows. Measured live on
+2026-11-04 by the first real run: **1,691 messages, 248,557,999 B**, newest
+`sent_at` 2026-11-04T11:01:13Z. A run that reports more than the number above
+is newer mail arriving, not a bug; `in_db` vs `written` is the check that
+matters, not equality with this paragraph.
+
 ## 4. Tasks, in order
 
 Do not reorder. Each one is verifiable before the next.
@@ -236,7 +242,8 @@ finding that is really about 2016 mail.
 
 - [ ] `--dry-run` exits 0 and asserts both mounts, naming the failing path on error.
 - [ ] `python -m build`, `ruff check src tests`, `pytest -q` green; `docker_batch_smoke` green.
-- [ ] A live run writes 1,690 `.eml` files totalling **248,421,760 B**.
+- [x] A live run writes 1,690 `.eml` files totalling **248,421,760 B**.
+      Done 2026-11-04: 1,691 files / 248,557,999 B (the delta is new mail).
 - [ ] `raw/SHA256SUMS` verifies: `cd /archive/raw && sha256sum -c SHA256SUMS`.
 - [ ] Every `.eml` sha256 matches its `index.jsonl` line.
 - [ ] Every `index.jsonl` `sha256` matches the file; every `images[].url_path` has no `?`.

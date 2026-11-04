@@ -52,6 +52,19 @@ docker run --rm \
   ghcr.io/nickbrett1/stratechery-archive:<commit-sha>
 ```
 
+The image has no `ENTRYPOINT`, only `CMD ["python","-m","stratechery_archive"]`.
+A bare `docker run <image> --dry-run` therefore replaces the whole command and
+fails with `exec: "--dry-run": executable file not found in $PATH`. Any flag has
+to repeat the module invocation:
+
+```bash
+docker run --rm ... ghcr.io/nickbrett1/stratechery-archive:<commit-sha> \
+  python -m stratechery_archive --dry-run
+```
+
+Also note the published tags are full 40-character commit SHAs (plus `latest`);
+there is no short-SHA tag, so `:f15a73a` will not resolve.
+
 The mount set is a contract between this image and whoever invokes it. The
 entrypoint must assert every path it expects exists and is readable, and exit
 non-zero naming the missing path — a DAG/image mismatch then fails run #1 with
