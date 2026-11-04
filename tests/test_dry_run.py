@@ -10,15 +10,14 @@ from pathlib import Path
 
 import pytest
 
+from conftest import build_vault
 from stratechery_archive.__main__ import main, run_dry_run
 
 
 @pytest.fixture
 def vault_db(tmp_path: Path) -> Path:
     path = tmp_path / "msgvault.db"
-    conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY)")
-    conn.commit()
+    conn = build_vault(path)
     conn.close()
     return path
 
@@ -82,6 +81,8 @@ def test_both_mounts_usable_passes(vault_db, archive_dir, capsys):
     assert code == 0
     assert "read-only ok" in out
     assert "writable" in out
+    # §3.2: the preview states the population it would mirror.
+    assert "population: 3 messages" in out
 
 
 def test_db_is_opened_read_only(vault_db, archive_dir):
@@ -116,9 +117,39 @@ def test_dry_run_writes_nothing(vault_db, archive_dir):
     assert list(archive_dir.iterdir()) == []
 
 
-def test_main_without_dry_run_is_not_a_silent_success(vault_db, archive_dir, capsys):
-    # A run that did nothing must not exit 0: that reads as an archived corpus.
+def test_main_runs_the_mirror_when_mounts_are_good(vault_db, archive_dir):
     code = main(["--db", str(vault_db), "--archive", str(archive_dir)])
 
+    assert code == 0
+    assert len(list((archive_dir / "raw").glob("*.eml"))) == 3
+    assert (archive_dir / "index.jsonl").exists()
+
+
+def test_main_refuses_a_missing_mount_before_writing(tmp_path, capsys):
+    code = main(
+        [
+            "--db",
+            str(tmp_path / "nope.db"),
+            "--archive",
+            str(tmp_path / "archive"),
+        ]
+    )
+
     assert code == 1
-    assert "not implemented yet" in capsys.readouterr().err
+    assert str(tmp_path / "nope.db") in capsys.readouterr().err
+    assert not (tmp_path / "archive" / "raw").exists()
+
+
+def test_dry_run_refuses_a_db_that_is_not_a_msgvault_archive(tmp_path, capsys):
+    imposter = tmp_path / "msgvault.db"
+    conn = sqlite3.connect(imposter)
+    conn.execute("CREATE TABLE something_else (id INTEGER PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+
+    code = run_dry_run(imposter, archive_dir)
+
+    assert code == 1
+    assert "no table 'messages'" in capsys.readouterr().err

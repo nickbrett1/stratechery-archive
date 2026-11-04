@@ -36,7 +36,7 @@ DEFAULT_ARCHIVE_DIR = Path("/archive")
 
 EXIT_OK = 0
 EXIT_MOUNT_FAILED = 1
-EXIT_NOT_IMPLEMENTED = 1
+EXIT_RUN_FAILED = 1
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,22 @@ def check_archive(archive_dir: Path) -> MountCheck:
     return MountCheck(archive_dir, True, "writable")
 
 
+def describe_population(db_path: Path) -> tuple[int | None, str | None]:
+    """(population count, error). Reads only; used by the dry-run preview."""
+    import sqlite3
+
+    from stratechery_archive import population
+
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            return population.count(conn), None
+        finally:
+            conn.close()
+    except (sqlite3.Error, population.SchemaError) as exc:
+        return None, str(exc)
+
+
 def run_dry_run(db_path: Path, archive_dir: Path) -> int:
     """Report what would happen, write nothing, return the exit code."""
     checks = (check_db(db_path), check_archive(archive_dir))
@@ -110,6 +126,11 @@ def run_dry_run(db_path: Path, archive_dir: Path) -> int:
 
     failures = [check for check in checks if not check.ok]
     if not failures:
+        count, error = describe_population(db_path)
+        if count is None:
+            print(f"error: cannot read the population: {error}", file=sys.stderr)
+            return EXIT_MOUNT_FAILED
+        print(f"population: {count} messages would be mirrored")
         print("dry run complete: both mounts usable, no files written.")
         return EXIT_OK
 
@@ -156,14 +177,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         return run_dry_run(args.db, args.archive)
 
-    # The mirror loop is BRIEF §4 Task 3. Until it exists, say so instead of
-    # exiting 0 on a run that did nothing - a silent success would look like a
-    # completed archive.
-    print(
-        "error: the mirror is not implemented yet (see .agents/BRIEF.md Task 3).",
-        file=sys.stderr,
-    )
-    return EXIT_NOT_IMPLEMENTED
+    # The mirror needs both inputs; the same checks the dry run makes, so a
+    # broken mount fails here rather than halfway through the corpus.
+    for check in (check_db(args.db), check_archive(args.archive)):
+        if not check.ok:
+            print(f"error: {check.path}: {check.detail}", file=sys.stderr)
+            return EXIT_MOUNT_FAILED
+
+    from stratechery_archive import mirror, population
+
+    try:
+        return mirror.run(args.db, args.archive)
+    except (population.SchemaError, mirror.MirrorError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_RUN_FAILED
 
 
 if __name__ == "__main__":
