@@ -6,10 +6,29 @@ import hashlib
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from conftest import FAKE_TOKEN, build_vault, make_eml
-from stratechery_archive import images, mirror
+from stratechery_archive import assets, images, mirror
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Every test in this module gets an offline asset client.
+
+    Asset capture has its own tests; here the point is that a dead CDN must not
+    change what the raw mirror does.
+    """
+
+    def connect_error(request):
+        raise httpx.ConnectError("offline in tests", request=request)
+
+    monkeypatch.setattr(
+        assets,
+        "default_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(connect_error)),
+    )
 
 
 @pytest.fixture
@@ -205,7 +224,11 @@ def test_run_file_records_the_query_and_the_code(vault, archive):
         "skipped_unchanged": 0,
         "failed": 0,
     }
-    assert payload["assets"] == {"referenced": 6, "fetched": 0, "failed": 0}
+    # Offline in tests: six URLs referenced, none captured, none blocking.
+    assert payload["assets"]["referenced"] == 6
+    assert payload["assets"]["fetched"] == 0
+    assert payload["assets"]["failed"] == 6
+    assert payload["totals"]["failed"] == 0
 
 
 def test_no_tmp_files_survive(vault, archive):

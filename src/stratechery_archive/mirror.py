@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
 import sys
 import zlib
@@ -32,7 +31,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from stratechery_archive import images, population
+from stratechery_archive import assets, images, population
+from stratechery_archive.storage import sha256_bytes, sha256_file, write_atomic
 
 CHUNK = 1024 * 1024
 
@@ -64,44 +64,6 @@ class Counters:
 
 
 # --- bytes and files -------------------------------------------------------
-
-
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(CHUNK), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _fsync_dir(path: Path) -> None:
-    # The rename is only durable once the directory entry is. Best effort:
-    # some filesystems (and tmpfs under test) refuse to fsync a directory.
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
-
-
-def write_atomic(path: Path, data: bytes) -> None:
-    """`.tmp` -> fsync -> rename. A reader never sees a partial file."""
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, path)
-    _fsync_dir(path.parent)
 
 
 # --- index -----------------------------------------------------------------
@@ -207,8 +169,19 @@ def _decode(row: sqlite3.Row, blob: bytes) -> bytes:
         raise MirrorError(f"zlib could not decompress: {exc}") from exc
 
 
-def run(db_path: Path, archive_dir: Path) -> int:
-    """Mirror the population. Returns 0 when every message was handled."""
+def run(
+    db_path: Path,
+    archive_dir: Path,
+    *,
+    no_assets: bool = False,
+    asset_client: Any = None,
+) -> int:
+    """Mirror the population. Returns 0 when every message was handled.
+
+    ``no_assets`` means *lossy*, not deferred: the run records the URLs and
+    captures no bytes (BRIEF §4 Task 5). ``asset_client`` exists so tests can
+    inject a transport; production uses a plain httpx client.
+    """
     raw_dir = archive_dir / "raw"
     runs_dir = archive_dir / "runs"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -303,6 +276,13 @@ def run(db_path: Path, archive_dir: Path) -> int:
             "overwrite an unattested file",
         )
 
+    # Assets are fetched after the mirror is written, so a dead CDN can never
+    # cost us an .eml. Failures here are counted in the assets block and do not
+    # change the exit code.
+    asset_totals = assets.fetch_all(
+        entries, archive_dir, client=asset_client, disabled=no_assets
+    )
+
     # --- index, then manifest, then the run record ---
 
     index_bytes = dump_index(entries)
@@ -338,20 +318,15 @@ def run(db_path: Path, archive_dir: Path) -> int:
         },
         "bytes": {
             "raw_total": sum(int(entry["bytes"]) for entry in entries.values()),
-            "assets_new": 0,
+            "assets_new": asset_totals.bytes_new,
         },
         "hashes": {
             "index_jsonl_sha256": sha256_bytes(index_bytes),
             "sha256sums_sha256": sha256_bytes(manifest_bytes),
         },
-        # Task 5 populates assets; until then every referenced image is a known
-        # URL with no captured bytes, which is exactly what a missing `asset`
-        # key in an images[] entry means.
-        "assets": {
-            "referenced": sum(len(entry.get("images") or []) for entry in entries.values()),
-            "fetched": 0,
-            "failed": 0,
-        },
+        # A missing `asset` key on an images[] entry means "known URL, no
+        # captured bytes" - the truthful record of a failed fetch.
+        "assets": {**asset_totals.as_dict(), "disabled": no_assets},
         "failures": [failure.as_dict() for failure in counters.failures],
     }
     run_path = _write_run_file(runs_dir, finished, payload)
@@ -361,6 +336,11 @@ def run(db_path: Path, archive_dir: Path) -> int:
         f"skipped_unchanged={counters.skipped_unchanged} failed={counters.failed}"
     )
     print(f"raw_total={payload['bytes']['raw_total']} B")
+    print(
+        f"assets: referenced={asset_totals.referenced} fetched={asset_totals.fetched} "
+        f"skipped={asset_totals.skipped} failed={asset_totals.failed} "
+        f"({asset_totals.bytes_new} B new)"
+    )
     print(f"run record: {run_path}")
     for failure in counters.failures[:10]:
         print(f"  failed {failure.message_id}: {failure.reason}", file=sys.stderr)

@@ -167,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"msgvault database (default: {DEFAULT_DB_PATH})",
     )
     parser.add_argument(
+        "--no-assets",
+        action="store_true",
+        help="record image URLs but capture no bytes (lossy, not deferred)",
+    )
+    parser.add_argument(
         "--archive",
         type=Path,
         default=DEFAULT_ARCHIVE_DIR,
@@ -187,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     from stratechery_archive import mirror, population
 
     try:
-        return mirror.run(args.db, args.archive)
+        return mirror.run(args.db, args.archive, no_assets=args.no_assets)
     except (population.SchemaError, mirror.MirrorError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_RUN_FAILED
